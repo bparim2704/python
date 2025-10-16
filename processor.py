@@ -653,7 +653,7 @@ def write_block_labels_and_numbers(
             if r_over is None or r_over >= df.shape[0]:
                 continue
 
-            for c in range(start, end):
+            for c in range(start, end + 1):
                 base_cell = str(df.iat[r_base, c]).strip()
                 over_cell = str(df.iat[r_over, c]).strip()
 
@@ -663,6 +663,12 @@ def write_block_labels_and_numbers(
                     if over_cell in {"", "·", "nan"} and over_right in {"", "·", "nan"}:
                         df.iat[r_over, c] = base_cell
                         df.iat[r_over, c + 1] = base_vals[base_cell]["credits"]
+                    continue
+
+                # Mirror bare numeric values into overlay when overlay slot is empty-ish
+                if is_numeric_str(base_cell):
+                    if over_cell in {"", "·", "nan"}:
+                        df.iat[r_over, c] = base_cell
                     continue
 
                 # Propagate xN multipliers into overlay row using nearest base label to the left
@@ -698,7 +704,8 @@ def write_block_labels_and_numbers(
 
 
 def process_dataframe(df: Any) -> Any:
-    if df.empty:
+    # SimpleGrid does not define .empty; use shape checks
+    if df.shape[0] == 0 or df.shape[1] == 0:
         return df
 
     # Extract all blocks first
