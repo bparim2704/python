@@ -106,6 +106,22 @@ BASELINE_ROWS_BY_KEY_RAW: Dict[str, Dict[int, List[Any]]] = {
     },
 }
 
+# Curated overrides where scaling deviates from simple denom ratio
+BASELINE_ROWS_BY_KEY_RAW.update({
+    "5CT $3": {
+        3: ["$150", "$80", "$50"],
+        4: [1000, 500, 300],
+        5: [200, 150, 120],
+        6: [100, 80, 60],
+    },
+    "10CT $3": {
+        3: ["$150", "$80", "$50"],
+        4: [500, 250, 150],
+        5: [100, 75, 60],
+        6: [50, 40, 30],
+    },
+})
+
 
 def _rows_scale(rows: Dict[int, List[float]], factor: float) -> Dict[int, List[float]]:
     return {r: [round(v * factor, 6) for v in vs] for r, vs in rows.items()}
