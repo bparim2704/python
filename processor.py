@@ -327,11 +327,33 @@ def detect_derived_values(
             if not raw:
                 continue
 
-            # Cash overlays (e.g., "$600")
+            # Cash overlays (e.g., "$600"): preserve and attempt to map to base values
             if raw.startswith("$") and is_numeric_str(raw):
                 cash_val = clean_number(raw)
                 if cash_val is not None:
-                    derived[(r, c)] = {"credits": None, "cash": float(cash_val), "derived_from": "overlay"}
+                    # Try to find a clean integer multiple or direct match against base cash values
+                    candidates: List[Tuple[int, float, str]] = []  # (factor, base_cash, symbol)
+                    for sym, bv in base_values.items():
+                        base_cash = float(bv.get("cash") or 0.0)
+                        if base_cash <= 0:
+                            continue
+                        if math.isclose(cash_val, base_cash, rel_tol=1e-6, abs_tol=1e-2):
+                            candidates.append((1, base_cash, sym))
+                            continue
+                        m = cash_val / base_cash
+                        if abs(m - round(m)) < 0.01:
+                            candidates.append((int(round(m)), base_cash, sym))
+                    derived_from = "overlay"
+                    if candidates:
+                        # prefer lower multiplier, then lower base_cash
+                        candidates.sort(key=lambda x: (x[0], x[1]))
+                        k, base_cash, sym = candidates[0]
+                        derived_from = (f"{k}×{sym}" if k != 1 else sym)
+                    derived[(r, c)] = {
+                        "credits": None,
+                        "cash": float(cash_val),
+                        "derived_from": derived_from,
+                    }
                 continue
 
             # Numeric credits/cash
