@@ -748,6 +748,66 @@ def save_csv(path: str, df: SimpleGrid) -> None:
 
 
 # ==============================
+# Excel I/O (optional, via openpyxl)
+# ==============================
+
+def _ensure_openpyxl():
+    try:
+        # Local import to avoid hard dependency when only CSV is used
+        import openpyxl  # type: ignore  # noqa: F401
+        from openpyxl import Workbook  # type: ignore  # noqa: F401
+        from openpyxl import load_workbook  # type: ignore  # noqa: F401
+        return True
+    except Exception as e:
+        return False
+
+
+def load_xlsx_tables(path: str) -> Dict[str, List[List[Any]]]:
+    """Load all sheets from an .xlsx file into {sheet_name: table(list[list[Any]])}.
+
+    Requires openpyxl. Cells with None are returned as empty strings to preserve shape.
+    """
+    from openpyxl import load_workbook  # type: ignore
+
+    wb = load_workbook(path, data_only=True)
+    sheet_to_table: Dict[str, List[List[Any]]] = {}
+    for ws in wb.worksheets:
+        max_row = ws.max_row or 0
+        max_col = ws.max_column or 0
+        table: List[List[Any]] = []
+        for r in range(1, max_row + 1):
+            row_vals: List[Any] = []
+            for c in range(1, max_col + 1):
+                v = ws.cell(row=r, column=c).value
+                if v is None:
+                    v = ""
+                row_vals.append(v)
+            table.append(row_vals)
+        sheet_to_table[ws.title] = table
+    return sheet_to_table
+
+
+def save_xlsx(path: str, sheets: Dict[str, SimpleGrid]) -> None:
+    """Write processed grids to a new .xlsx workbook with same sheet names.
+
+    Requires openpyxl.
+    """
+    from openpyxl import Workbook  # type: ignore
+
+    wb = Workbook()
+    # Remove the default empty sheet
+    default = wb.active
+    wb.remove(default)
+
+    for name, df in sheets.items():
+        ws = wb.create_sheet(title=str(name)[:31] or "Sheet")
+        for r_idx, row in enumerate(df.data, start=1):
+            for c_idx, val in enumerate(row, start=1):
+                ws.cell(row=r_idx, column=c_idx, value=val)
+    wb.save(path)
+
+
+# ==============================
 # CLI
 # ==============================
 
@@ -762,17 +822,35 @@ def main(inputs_dir: str = "inputs", output_dir: str = "output") -> None:
 
     any_found = False
     for name in sorted(os.listdir(inputs_dir)):
-        if not name.lower().endswith(".csv"):
-            continue
         in_path = os.path.join(inputs_dir, name)
+        lower = name.lower()
         try:
-            table = load_csv(in_path)
-            df = to_df(table)
-            updated = process_dataframe(df)
-            out_path = os.path.join(output_dir, f"processed_{name}")
-            save_csv(out_path, updated)
-            print(f"Processed {name} -> {out_path}")
-            any_found = True
+            if lower.endswith(".csv"):
+                table = load_csv(in_path)
+                df = to_df(table)
+                updated = process_dataframe(df)
+                out_path = os.path.join(output_dir, f"processed_{name}")
+                save_csv(out_path, updated)
+                print(f"Processed {name} -> {out_path}")
+                any_found = True
+            elif lower.endswith(".xlsx"):
+                if not _ensure_openpyxl():
+                    print(f"Skipping {name}: openpyxl not available in this environment.")
+                    continue
+                # Load all sheets and process each independently
+                sheet_tables = load_xlsx_tables(in_path)
+                processed: Dict[str, SimpleGrid] = {}
+                for sheet_name, table in sheet_tables.items():
+                    df = to_df(table)
+                    updated = process_dataframe(df)
+                    processed[sheet_name] = updated
+                out_name = f"processed_{os.path.splitext(name)[0]}.xlsx"
+                out_path = os.path.join(output_dir, out_name)
+                save_xlsx(out_path, processed)
+                print(f"Processed {name} ({len(processed)} sheets) -> {out_path}")
+                any_found = True
+            else:
+                continue
         except Exception as e:
             print(f"Failed {name}: {e}")
 
